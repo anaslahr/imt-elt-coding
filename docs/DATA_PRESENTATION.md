@@ -25,6 +25,8 @@
 
 ---
 
+> 📐 For visual architecture diagrams (pipeline flow, ER diagram, tech stack), see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Source Data Architecture (Bronze)
 
 ```mermaid
