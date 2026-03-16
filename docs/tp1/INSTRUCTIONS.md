@@ -258,131 +258,78 @@ The raw data lives in the **S3 data lake** (`s3://kickz-empire-data/raw/`). Your
 
 ### 2.1 Implement `_read_csv_from_s3()`
 
-This function downloads a CSV from S3 and returns it as a DataFrame:
+This function takes an S3 key (e.g. `"raw/catalog/products.csv"`) and returns a DataFrame.
 
-```python
-def _read_csv_from_s3(s3_key):
-    s3 = _get_s3_client()
-    response = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
-    csv_content = response["Body"].read().decode("utf-8")
-    return pd.read_csv(StringIO(csv_content))
-```
+**Steps:**
+1. Get an S3 client using the helper
+2. Download the object with `get_object(Bucket=..., Key=...)`
+3. Read and decode the body (it's bytes → decode to UTF-8 string)
+4. Pass it to `pd.read_csv()` — but remember, `read_csv()` expects a file-like object, not a plain string. What class from the `io` module can help?
+
+> 💡 You already did this interactively in Step 1.2. Now wrap it in a reusable function.
 
 ### 2.2 Implement `_read_jsonl_from_s3()`
 
-This function downloads a JSONL file (one JSON object per line) and returns it as a DataFrame:
+Very similar to the CSV reader, but for JSONL format (one JSON object per line).
 
-```python
-def _read_jsonl_from_s3(s3_key):
-    s3 = _get_s3_client()
-    response = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
-    jsonl_content = response["Body"].read().decode("utf-8")
-    return pd.read_json(StringIO(jsonl_content), lines=True)
-```
+**Key difference:** Instead of `pd.read_csv()`, use `pd.read_json()` with the `lines=True` parameter.
 
-> 💡 **Key difference**: `pd.read_json(..., lines=True)` reads JSONL format — one JSON object per line. Without `lines=True`, pandas would expect a single JSON array.
+> 💡 Without `lines=True`, pandas would expect a single JSON array. With `lines=True`, it reads one JSON object per line — which is the JSONL format.
 
 ### 2.3 Implement `_read_partitioned_parquet_from_s3()`
 
 This is the most complex reader. Partitioned Parquet data is split across many files in date-based folders. You need to:
 
-1. **List** all objects under the S3 prefix using a paginator
-2. **Filter** for files ending with `.parquet`
-3. **Download** each file and read it with `pyarrow.parquet.read_table()`
-4. **Concatenate** all partitions into one DataFrame
+1. **List** all objects under the S3 prefix — but S3 returns max 1,000 objects per call. What boto3 feature handles this automatically?
+2. **Filter** for files ending with `.parquet` (ignore folder markers)
+3. **Download** each file and read it — Parquet is binary, not text. Use `BytesIO` instead of `StringIO`, and `pq.read_table()` instead of `pd.read_csv()`
+4. **Concatenate** all partition DataFrames into one
 
-```python
-def _read_partitioned_parquet_from_s3(s3_prefix):
-    s3 = _get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
-    dfs = []
-    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=s3_prefix):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if key.endswith(".parquet"):
-                response = s3.get_object(Bucket=S3_BUCKET, Key=key)
-                table = pq.read_table(BytesIO(response["Body"].read()))
-                dfs.append(table.to_pandas())
-    return pd.concat(dfs, ignore_index=True)
-```
-
-> 💡 **Why a paginator?** S3 `list_objects_v2` returns max 1,000 objects per call. A paginator automatically handles pagination. With ~60+ Parquet files across 30 days, this is necessary.
+> 💡 **Why a paginator?** With ~60+ Parquet files across 30 days, a single `list_objects_v2` call may not return all of them. The paginator loops through all pages automatically.
 
 ### 2.4 Implement `_load_to_bronze()`
 
-This function loads a pandas DataFrame into a PostgreSQL table:
+This function loads a pandas DataFrame into a PostgreSQL table in the Bronze schema.
 
-```python
-def _load_to_bronze(df, table_name, if_exists="replace"):
-    engine = get_engine()
-    df.to_sql(
-        name=table_name,
-        con=engine,
-        schema=BRONZE_SCHEMA,
-        if_exists=if_exists,
-        index=False,
-    )
-    print(f"    ✅ {BRONZE_SCHEMA}.{table_name} — {len(df)} rows loaded")
-```
+**Key method:** `df.to_sql()` — check the [pandas docs](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.to_sql.html) for the parameters you'll need:
+- Which parameter sets the table name?
+- Which parameter takes the SQLAlchemy engine?
+- Which parameter sets the schema?
+- Which parameter controls the behavior if the table already exists?
+- Don't forget to exclude the pandas index from the SQL table
 
 ### 2.5 Implement the 4 CSV `extract_*()` functions
 
-Each function follows the same pattern — read from S3 with `_read_csv_from_s3()`, log, and load:
+Each function follows the same 3-step pattern:
+1. **Read** from S3 using the appropriate reader helper
+2. **Log** the shape (rows × columns) with a print statement
+3. **Load** into Bronze using `_load_to_bronze()` with the right table name
 
-```python
-def extract_products():
-    df = _read_csv_from_s3(f"{S3_PREFIX}/catalog/products.csv")
-    print(f"  📦 Products: {len(df)} rows, {len(df.columns)} columns")
-    _load_to_bronze(df, "products")
-    return df
-```
+Start with `extract_products()`, then apply the same pattern to:
+- `extract_users()` — S3 key is in the docstring
+- `extract_orders()` — S3 key is in the docstring
+- `extract_order_line_items()` — S3 key is in the docstring
 
-Do the same for:
-- `extract_users()` → `"raw/users/users.csv"` → `"users"`
-- `extract_orders()` → `"raw/orders/orders.csv"` → `"orders"`
-- `extract_order_line_items()` → `"raw/order_line_items/order_line_items.csv"` → `"order_line_items"`
+> 💡 Each function's docstring tells you the exact S3 key and target table name.
 
 ### 2.6 Implement `extract_reviews()` (JSONL)
 
-This function uses `_read_jsonl_from_s3()` instead of `_read_csv_from_s3()`:
+Same 3-step pattern as the CSV extractors, but which reader helper should you use for JSONL?
 
-```python
-def extract_reviews():
-    df = _read_jsonl_from_s3(f"{S3_PREFIX}/reviews/reviews.jsonl")
-    print(f"  ⭐ Reviews: {len(df)} rows, {len(df.columns)} columns")
-    _load_to_bronze(df, "reviews")
-    return df
-```
+> 💡 Check the S3 key and table name in the function's docstring.
 
 ### 2.7 Implement `extract_clickstream()` (Partitioned Parquet)
 
-This function uses `_read_partitioned_parquet_from_s3()` with a **prefix** instead of a full key:
+Same 3-step pattern, but which reader helper should you use for partitioned Parquet? And note: unlike CSV/JSONL, you pass a **prefix** (folder path), not a single file key.
 
-```python
-def extract_clickstream():
-    df = _read_partitioned_parquet_from_s3(f"{S3_PREFIX}/clickstream/")
-    print(f"  🖱️ Clickstream: {len(df)} rows, {len(df.columns)} columns")
-    _load_to_bronze(df, "clickstream")
-    return df
-```
-
-> ⏱️ **Note**: The clickstream extraction takes a bit longer (~30 seconds) because it downloads ~60 Parquet files and concatenates ~544k rows.
+> ⏱️ **Note**: The clickstream extraction takes longer (~30 seconds) because it downloads ~60 Parquet files and concatenates ~544k rows.
 
 ### 2.8 Implement `extract_all()`
 
-Call all 6 functions and store the results:
-
-```python
-# CSV datasets
-results["products"] = extract_products()
-results["users"] = extract_users()
-results["orders"] = extract_orders()
-results["order_line_items"] = extract_order_line_items()
-# JSONL datasets
-results["reviews"] = extract_reviews()
-# Parquet datasets
-results["clickstream"] = extract_clickstream()
-```
+Call all 6 extract functions and store each result in the `results` dictionary. Group them by format:
+- 4 CSV datasets
+- 1 JSONL dataset
+- 1 Parquet dataset
 
 ### 2.9 Verify
 

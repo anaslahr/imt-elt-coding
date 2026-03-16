@@ -121,44 +121,26 @@ In production, you need to know:
 
 📁 **File:** `src/monitoring.py`
 
-```python
-import time
-import json
-from datetime import datetime, timezone
-from dataclasses import dataclass, field, asdict
+Create a module with two dataclasses to track pipeline execution:
 
+**`StepMetrics`** — tracks a single pipeline step:
+- `step_name` (str): e.g. "extract", "transform", "gold"
+- `status` (str): "pending" → "running" → "success" / "failed"
+- `start_time`, `end_time` (str): ISO format timestamps
+- `duration_seconds` (float): how long the step took
+- `rows_processed` (int): total rows handled
+- `tables_created` (list): names of tables created
+- `errors` (list): any error messages
 
-@dataclass
-class StepMetrics:
-    """Metrics for a single pipeline step."""
-    step_name: str
-    status: str = "pending"       # pending, running, success, failed
-    start_time: str = ""
-    end_time: str = ""
-    duration_seconds: float = 0.0
-    rows_processed: int = 0
-    tables_created: list = field(default_factory=list)
-    errors: list = field(default_factory=list)
+**`PipelineReport`** — aggregates all steps:
+- `pipeline_name` (str): "KICKZ EMPIRE ELT"
+- `run_id` (str): timestamp of the run
+- `steps` (list): list of `StepMetrics`
+- `add_step()`: add a step to the report
+- `to_json()`: serialize to JSON string
+- `save(filepath)`: write JSON to file
 
-
-@dataclass
-class PipelineReport:
-    """Full pipeline execution report."""
-    pipeline_name: str = "KICKZ EMPIRE ELT"
-    run_id: str = ""
-    steps: list = field(default_factory=list)
-
-    def add_step(self, step: StepMetrics):
-        self.steps.append(step)
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2)
-
-    def save(self, filepath: str = "pipeline_report.json"):
-        with open(filepath, "w") as f:
-            f.write(self.to_json())
-        print(f"📄 Pipeline report saved to {filepath}")
-```
+> 💡 Use `@dataclass` with `field(default_factory=list)` for mutable default values. Use `dataclasses.asdict()` to convert to a dict for JSON serialization.
 
 ### 2.2 Integrate metrics into the pipeline
 

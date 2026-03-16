@@ -117,6 +117,10 @@ def sample_orders():
 
 ### 1.3 Write transform tests (`tests/test_transform.py`)
 
+Create a test file that tests your Silver transform functions **without needing a real database**. Use `unittest.mock.patch` to replace `_read_bronze` and `_load_to_silver` with mock objects.
+
+**Structure your tests into classes:**
+
 ```python
 import pandas as pd
 import pytest
@@ -132,69 +136,48 @@ from src.transform import (
 
 class TestDropInternalColumns:
     """Tests for the _drop_internal_columns() helper."""
-
-    def test_removes_underscore_columns(self, sample_products):
-        result = _drop_internal_columns(sample_products)
-        assert "_internal_cost_usd" not in result.columns
-        assert "_supplier_id" not in result.columns
-
-    def test_keeps_regular_columns(self, sample_products):
-        result = _drop_internal_columns(sample_products)
-        assert "product_id" in result.columns
-        assert "brand" in result.columns
-
-    def test_empty_dataframe(self):
-        df = pd.DataFrame()
-        result = _drop_internal_columns(df)
-        assert len(result.columns) == 0
+    # Test that columns starting with '_' are removed
+    # Test that regular columns are kept
+    # Test edge case: empty DataFrame
 
 
 class TestTransformProducts:
     """Tests for transform_products()."""
-
-    @patch("src.transform._load_to_silver")
-    @patch("src.transform._read_bronze")
-    def test_removes_invalid_prices(self, mock_read, mock_load, sample_products):
-        mock_read.return_value = sample_products
-        result = transform_products()
-        # Product with price -10.00 should be removed
-        assert all(result["price_usd"] > 0)
-
-    @patch("src.transform._load_to_silver")
-    @patch("src.transform._read_bronze")
-    def test_normalizes_tags(self, mock_read, mock_load, sample_products):
-        mock_read.return_value = sample_products
-        result = transform_products()
-        # '|' should be replaced with ', '
-        assert "|" not in result["tags"].str.cat()
+    # Mock _read_bronze to return sample_products fixture
+    # Mock _load_to_silver so it doesn't hit the DB
+    # Test that invalid prices (<=0) are removed
+    # Test that tags are normalized ('|' replaced with ', ')
+    # Test that boolean columns are converted
 
 
 class TestTransformUsers:
     """Tests for transform_users()."""
+    # Test that PII columns (_hashed_password, _last_ip, etc.) are removed
+    # Test that NULL loyalty_tier is filled with 'none'
+    # Test that emails are lowercased and stripped
 
-    @patch("src.transform._load_to_silver")
-    @patch("src.transform._read_bronze")
-    def test_removes_pii(self, mock_read, mock_load, sample_users):
-        mock_read.return_value = sample_users
-        result = transform_users()
-        assert "_hashed_password" not in result.columns
-        assert "_last_ip" not in result.columns
-        assert "_device_fingerprint" not in result.columns
 
-    @patch("src.transform._load_to_silver")
-    @patch("src.transform._read_bronze")
-    def test_fills_null_loyalty_tier(self, mock_read, mock_load, sample_users):
-        mock_read.return_value = sample_users
-        result = transform_users()
-        assert result["loyalty_tier"].isna().sum() == 0
-
-    @patch("src.transform._load_to_silver")
-    @patch("src.transform._read_bronze")
-    def test_normalizes_email(self, mock_read, mock_load, sample_users):
-        mock_read.return_value = sample_users
-        result = transform_users()
-        assert result.iloc[0]["email"] == "alice@example.com"
+class TestTransformOrders:
+    """Tests for transform_orders()."""
+    # Test that invalid statuses are flagged/removed
+    # Test that order_date is converted to datetime
+    # Test that NULL coupon_code is replaced with ''
 ```
+
+**Key technique — mocking database calls:**
+
+```python
+@patch("src.transform._load_to_silver")   # mock the DB write
+@patch("src.transform._read_bronze")      # mock the DB read
+def test_something(self, mock_read, mock_load, sample_products):
+    mock_read.return_value = sample_products  # inject fake data
+    result = transform_products()             # call the real function
+    # assert something about result...
+```
+
+> 💡 The `@patch` decorators are applied bottom-up: the first `@patch` in the list becomes the **last** argument. That's why `mock_read` comes before `mock_load` in the function signature.
+
+Write **at least 2-3 tests per transform function** covering: normal behavior, edge cases, and data quality checks.
 
 ### 1.4 Run the tests
 
@@ -222,57 +205,32 @@ Replace `print()` statements with Python's `logging` module. In production, logs
 
 📁 **File:** `src/logger.py`
 
-```python
-import logging
-import json
-import sys
-from datetime import datetime, timezone
+Create a module that provides a reusable logger with **JSON-formatted output**. Your logger should:
 
+1. **Format logs as JSON** — each log line should be a JSON object with keys: `timestamp`, `level`, `module`, `function`, `message`
+2. **Include exception info** when an error is logged
+3. **Provide a `get_logger(name)` function** that creates a configured logger
 
-class JSONFormatter(logging.Formatter):
-    """Format log records as JSON lines."""
+**Useful classes:**
+- `logging.Formatter` — subclass it to create a custom JSON formatter
+- `logging.StreamHandler` — outputs to stdout
+- `json.dumps()` — to serialize the log entry
+- `datetime.now(timezone.utc).isoformat()` — for timestamps
 
-    def format(self, record):
-        log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "level": record.levelname,
-            "module": record.module,
-            "function": record.funcName,
-            "message": record.getMessage(),
-        }
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_entry)
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Create a logger with JSON output."""
-    logger = logging.getLogger(name)
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(JSONFormatter())
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-    return logger
-```
+> 💡 Check the [Python logging HOWTO](https://docs.python.org/3/howto/logging.html) and the [Formatter docs](https://docs.python.org/3/library/logging.html#logging.Formatter) for guidance.
 
 ### 2.2 Replace `print()` with logging
 
-Example in `src/extract.py`:
+In `src/extract.py`, `src/transform.py`, and `src/gold.py`:
 
-```python
-from src.logger import get_logger
+1. Import your logger: `from src.logger import get_logger`
+2. Create a module-level logger: `logger = get_logger(__name__)`
+3. Replace all `print()` calls:
+   - Informational messages → `logger.info(...)`
+   - Warnings (e.g. invalid data found) → `logger.warning(...)`
+   - Errors → `logger.error(...)`
 
-logger = get_logger(__name__)
-
-def extract_products():
-    df = _read_csv_from_s3(f"{S3_PREFIX}/catalog/products.csv")
-    logger.info(f"Products: {len(df)} rows, {len(df.columns)} columns")
-    _load_to_bronze(df, "products")
-    return df
-```
-
-Apply the same pattern to `src/transform.py` and `src/gold.py`.
+> 💡 Keep the same message content — just switch from `print()` to the appropriate log level.
 
 ### 2.3 Verify
 
@@ -299,44 +257,26 @@ A single bad row or network timeout should not crash the entire pipeline. Add `t
 
 ### 3.1 Add error handling to extraction
 
-```python
-def extract_products():
-    try:
-        df = _read_csv_from_s3(f"{S3_PREFIX}/catalog/products.csv")
-        logger.info(f"Products: {len(df)} rows, {len(df.columns)} columns")
-        _load_to_bronze(df, "products")
-        return df
-    except Exception as e:
-        logger.error(f"Failed to extract products: {e}")
-        raise
-```
+Wrap each extract function in a `try/except` block:
+- On success: the function works as before
+- On failure: log the error with `logger.error()` including the exception message, then re-raise
+
+This ensures errors are **logged** (observable) but still **propagated** (the caller knows something failed).
 
 ### 3.2 Add error handling to transforms
 
-```python
-def transform_products():
-    try:
-        df = _read_bronze("products")
-        df = _drop_internal_columns(df)
-        # ... transformations ...
-        _load_to_silver(df, "dim_products")
-        return df
-    except Exception as e:
-        logger.error(f"Failed to transform products: {e}")
-        raise
-```
+Same pattern for each transform function. The key is: **log, then re-raise**.
+
+> 💡 Don't silently swallow exceptions with a bare `except: pass` — that hides bugs. Always re-raise or handle specifically.
 
 ### 3.3 Test error scenarios
 
-Write tests that verify error handling:
+Write tests that verify your error handling works correctly. Use `@patch` with `side_effect=Exception(...)` to simulate failures:
 
-```python
-class TestErrorHandling:
-    @patch("src.transform._read_bronze", side_effect=Exception("DB connection lost"))
-    def test_transform_products_handles_db_error(self, mock_read):
-        with pytest.raises(Exception, match="DB connection lost"):
-            transform_products()
-```
+- What happens when `_read_bronze` raises an exception? Does `transform_products()` propagate it?
+- Use `pytest.raises(Exception, match="...")` to assert the right error is raised
+
+> 💡 Look at `unittest.mock.patch(side_effect=...)` in the [mock docs](https://docs.python.org/3/library/unittest.mock.html#unittest.mock.Mock.side_effect).
 
 ---
 

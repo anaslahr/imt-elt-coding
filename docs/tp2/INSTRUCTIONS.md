@@ -61,15 +61,13 @@ The Silver layer contains **cleaned and conformed** data:
 
 ### 1.1 Implement `_drop_internal_columns()`
 
-This is the core cleaning function — it removes all columns prefixed with `_`:
+This is the core cleaning function — it removes all columns prefixed with `_`.
 
-```python
-def _drop_internal_columns(df):
-    internal_cols = [col for col in df.columns if col.startswith('_')]
-    df = df.drop(columns=internal_cols)
-    print(f"    🧹 {len(internal_cols)} internal columns removed: {internal_cols}")
-    return df
-```
+**Steps:**
+1. Find all column names that start with `_` (use a list comprehension on `df.columns`)
+2. Drop them from the DataFrame
+3. Print how many were removed (for logging/debugging)
+4. Return the cleaned DataFrame
 
 ### 1.2 Implement `transform_products()`
 
@@ -106,14 +104,7 @@ Follow the steps in the code comments:
 
 ### 1.6 Implement `transform_all()`
 
-Call each function and store results:
-
-```python
-results["dim_products"] = transform_products()
-results["dim_users"] = transform_users()
-results["fct_orders"] = transform_orders()
-results["fct_order_lines"] = transform_order_line_items()
-```
+Call each of the 4 transform functions and store their results in the `results` dictionary. The keys should match the Silver table names (`dim_products`, `dim_users`, `fct_orders`, `fct_order_lines`).
 
 ### 1.7 Verify
 
@@ -175,25 +166,16 @@ Two approaches are possible for each Gold table:
 
 > 📊 *The marketing team asks: "How much revenue per day?"*
 
-**SQL approach (recommended):**
-```python
-def create_daily_revenue():
-    query = f"""
-        SELECT
-            DATE(o.order_date) AS order_date,
-            COUNT(DISTINCT o.order_id) AS total_orders,
-            ROUND(CAST(SUM(o.total_usd) AS numeric), 2) AS total_revenue,
-            ROUND(CAST(AVG(o.total_usd) AS numeric), 2) AS avg_order_value,
-            COALESCE(SUM(ol.quantity), 0) AS total_items
-        FROM {SILVER_SCHEMA}.fct_orders o
-        LEFT JOIN {SILVER_SCHEMA}.fct_order_lines ol ON o.order_id = ol.order_id
-        WHERE o.status NOT IN ('cancelled', 'chargeback')
-        GROUP BY DATE(o.order_date)
-        ORDER BY order_date
-    """
-    df = pd.read_sql(query, get_engine())
-    _create_gold_table(df, "daily_revenue")
-```
+Write a SQL query that:
+- Joins `fct_orders` with `fct_order_lines` (on `order_id`)
+- Excludes cancelled and chargeback orders
+- Groups by `DATE(order_date)`
+- Computes: `total_orders` (COUNT DISTINCT), `total_revenue` (SUM), `avg_order_value` (AVG), `total_items` (SUM of quantity)
+- Orders by date
+
+Then use `pd.read_sql()` to execute it and `_create_gold_table()` to save it.
+
+> 💡 Use `ROUND(CAST(... AS numeric), 2)` for clean decimal output and `COALESCE(..., 0)` for NULL handling.
 
 ### 2.2 Implement `create_product_performance()`
 
@@ -225,13 +207,7 @@ Expected columns: `user_id`, `email`, `first_name`, `last_name`, `loyalty_tier`,
 
 ### 2.4 Implement `create_gold_layer()`
 
-Call the 3 functions:
-
-```python
-create_daily_revenue()
-create_product_performance()
-create_customer_ltv()
-```
+Call the 3 Gold creation functions.
 
 ### 2.5 Verify
 
