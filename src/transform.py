@@ -61,12 +61,21 @@ def _drop_internal_columns(df: pd.DataFrame) -> pd.DataFrame:
         Columns before: ['product_id', 'brand', '_internal_cost_usd', '_supplier_id']
         Columns after:  ['product_id', 'brand']
     """
-    # TODO: Filter and drop columns starting with '_'
+    # Filter and drop columns starting with '_'
     # Steps: 1. Find columns that start with '_' (list comprehension on df.columns)
     #        2. Drop them with df.drop(columns=...)
     #        3. Print how many were removed, then return
-    raise NotImplementedError("TODO: Implement _drop_internal_columns()")
+    cols = df.columns
+    internal_cols = []
 
+    for col in cols:
+        if col[0] == '_':
+            internal_cols.append(col)
+    
+    df.drop(columns=internal_cols, inplace=True)
+    print(f"{len(internal_cols)} have been removed from the original dataframe.")
+
+    return df
 
 def _load_to_silver(df: pd.DataFrame, table_name: str, if_exists: str = "replace"):
     """
@@ -110,7 +119,7 @@ def transform_products() -> pd.DataFrame:
     df = _read_bronze("products")
 
     # TODO: Step 1 — Drop internal columns (use the helper you wrote above)
-
+    
     # TODO: Step 2 — Normalize the 'tags' column
     # The tags use '|' as separator — replace with ', ' for cleanliness
     # Look at: .str.replace()
@@ -179,21 +188,21 @@ def transform_orders() -> pd.DataFrame:
     print("  🛍️ Transform: orders → fct_orders")
     df = _read_bronze("orders")
 
-    # TODO: Step 1 — Drop internal columns
-
-    # TODO: Step 2 — Validate statuses
+    # Step 1 — Drop internal columns
+    df = _drop_internal_columns(df)
+    # Step 2 — Validate statuses
     # Only keep rows with a valid status. The valid set is in the docstring above.
     # Look at: .isin() and boolean indexing
-
-    # TODO: Step 3 — Convert order_date to a proper datetime type
+    valid_statuses = ['delivered', 'shipped', 'processing', 'returned', 'cancelled', 'chargeback']
+    df = df[df['status'].isin(valid_statuses)]    
+    # Step 3 — Convert order_date to a proper datetime type
     # Look at: pd.to_datetime()
-
-    # TODO: Step 4 — Replace NULL coupon_code with empty string
+    df['order_date'] = pd.to_datetime(df['order_date'])
+    # Step 4 — Replace NULL coupon_code with empty string
     # Look at: .fillna()
-
-    # TODO: Step 5 — Load into Silver as "fct_orders"
-
-    raise NotImplementedError("TODO: Implement transform_orders()")
+    df['coupon_code'] = df['coupon_code'].fillna("")
+    # Step 5 — Load into Silver as "fct_orders"
+    _load_to_silver(df, table_name="fct_orders", if_exists="replace")
     return df
 
 
@@ -213,17 +222,25 @@ def transform_order_line_items() -> pd.DataFrame:
     print("  📋 Transform: order_line_items → fct_order_lines")
     df = _read_bronze("order_line_items")
 
-    # TODO: Step 1 — Drop internal columns
-
-    # TODO: Step 2 — Validate quantity > 0 (remove invalid rows)
-
-    # TODO: Step 3 — Verify line_total_usd ≈ unit_price_usd * quantity
+    # Step 1 — Drop internal columns
+    df = _drop_internal_columns(df)
+    # Step 2 — Validate quantity > 0 (remove invalid rows)
+    df = df[df['quantity'] > 0]
+    # Step 3 — Verify line_total_usd ≈ unit_price_usd * quantity
     # Compute the difference, flag rows where abs(diff) > 0.01, then clean up
     # This is a data quality check — print how many bad rows you find
+    expected_total = df['unit_price_usd'] * df['quantity']
+    difference = (df['line_total_usd'] - expected_total).abs()
 
-    # TODO: Step 4 — Load into Silver as "fct_order_lines"
-
-    raise NotImplementedError("TODO: Implement transform_order_line_items()")
+    bad_rows_mask = difference > 0.01
+    bad_rows_count = bad_rows_mask.sum()
+    
+    if bad_rows_count > 0:
+        print(f"Found {bad_rows_count} rows with invalid line_total_usd.")
+        df = df[~bad_rows_mask]
+    # Step 4 — Load into Silver as "fct_order_lines"
+    _load_to_silver(df, table_name="fct_order_lines", if_exists="replace")
+    
     return df
 
 
