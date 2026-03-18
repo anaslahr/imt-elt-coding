@@ -236,12 +236,32 @@ print(df_click.head())
 ### 1.5 Questions to answer (write down your observations)
 
 1. How many columns does `products.csv` have? Which ones start with `_` (internal columns)?
+
+products.csv has 21 columns. These columns are internal : _internal_cost_usd, _supplier_id, _warehouse_location, _internal_cost_code
+
 2. How many columns does `users.csv` have? Can you spot PII (passwords, IPs)?
+
+users.csv has 28 columns.
+These columns can be considered as PII : user_id, user_uuid, email, first_name, last_name, phone, gender, date_of_birth, city, address_line_1, address_line_2, postal_code, _ga_client_id, _fbp, _device_fingerprint, _last_ip
+
 3. In `orders.csv`, what are the possible values for `status`?
+
+Here are the possible values for status : 
+'delivered', 'shipped', 'returned', 'chargeback', 'cancelled', 'processing'
+
 4. In `order_line_items.csv`, does `line_total_usd ≈ unit_price_usd × quantity`?
+
+Yes, exactly.
+
 5. In `reviews.jsonl`, which columns start with `_`? What do `_moderation_score` and `_sentiment_raw` look like?
+
+In reviews.jsonl, these columns start with _ : _moderation_score, _sentiment_raw, _toxicity_score, _language_detected, _review_source.
+The moderation score and sentiment raw fields are floats between 0 and 1, respectively representing a score.
+
 6. In the clickstream Parquet file, what does the `event_type` column contain? What `_`-columns exist?
 
+The event_type column contains a string, which is always the same : 'pageview'.
+Here are the _ columns : _ga_client_id, _gtm_container_id, _dom_interactive_ms, _dom_complete_ms, _ttfb_ms
 > 💡 This profiling step is what real Data Engineers do before building a pipeline. You need to understand the data **before** transforming it.
 
 ---
