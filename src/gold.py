@@ -87,15 +87,35 @@ def create_daily_revenue():
         GROUP BY DATE(o.order_date)
         ORDER BY order_date
     """
-    print("  📊 Gold: daily_revenue")
+    sql_query = f"""
+        SELECT
+            DATE(o.order_date) AS order_date,
 
-    # TODO: Create daily_revenue using SQL
-    # Write a SQL query that joins fct_orders + fct_order_lines,
-    # groups by date, and computes the aggregates described in the docstring.
-    # Exclude cancelled/chargeback orders.
-    # Then: pd.read_sql() → _create_gold_table()
+            COUNT(DISTINCT o.order_id) AS total_orders,
 
-    raise NotImplementedError("TODO: Implement create_daily_revenue()")
+            COALESCE(ROUND(CAST(SUM(o.total_usd) AS numeric), 2), 0) AS total_revenue,
+
+            COALESCE(ROUND(CAST(AVG(o.total_usd) AS numeric), 2), 0) AS avg_order_value,
+
+            COALESCE(SUM(ol.quantity), 0) AS total_items
+
+        FROM {SILVER_SCHEMA}.fct_orders o
+
+        JOIN (
+            SELECT order_id, SUM(quantity) AS quantity
+            FROM {SILVER_SCHEMA}.fct_order_lines
+            GROUP BY order_id
+        ) ol ON o.order_id = ol.order_id
+
+        WHERE o.status NOT IN ('cancelled', 'chargeback')
+
+        GROUP BY DATE(o.order_date)
+        ORDER BY order_date
+    """
+
+    revenue = pd.read_sql(sql_query, get_engine())
+    _create_gold_table(revenue,"daily_revenue",if_exists="replace" )        
+    print("Gold: daily_revenue")
 
 
 def create_product_performance():
@@ -118,14 +138,33 @@ def create_product_performance():
         Group by product_id, product_name, brand, category
         Aggregate quantity, line_total_usd, count distinct order_id
     """
-    print("  🏆 Gold: product_performance")
+    print("Gold: product_performance")
 
-    # TODO: Create the product_performance table
+    # Create the product_performance table
     # Join fct_order_lines with dim_products (and filter via fct_orders)
     # Group by product_id + product details, aggregate sales metrics
     # See the expected columns in the docstring above
-
-    raise NotImplementedError("TODO: Implement create_product_performance()")
+    engine = get_engine()
+    query = f"""
+        SELECT 
+            p.product_id, 
+            p.display_name, 
+            p.brand, 
+            p.category,
+            SUM(ol.quantity) AS total_quantity_sold,
+            SUM(ol.line_total_usd) AS total_revenue,
+            COUNT(DISTINCT ol.order_id) AS num_orders,
+            AVG(ol.unit_price_usd) AS avg_unit_price
+        FROM {SILVER_SCHEMA}.fct_order_lines AS ol
+        JOIN {SILVER_SCHEMA}.dim_products AS p ON ol.product_id = p.product_id
+        GROUP BY 
+            p.product_id, 
+            p.display_name, 
+            p.brand, 
+            p.category
+    """
+    df_final = pd.read_sql(query, engine)
+    _create_gold_table(df_final, table_name="product_performance")
 
 
 def create_customer_ltv():
@@ -153,15 +192,29 @@ def create_customer_ltv():
         - last_order_date = MAX(order_date)
         - days_as_customer = last_order_date - first_order_date
     """
-    print("  💰 Gold: customer_ltv")
-
-    # TODO: Create the customer_ltv table
+    print("Gold: customer_ltv")
     # Join fct_orders with dim_users
     # Group by customer, compute the aggregates listed in the docstring
     # Hint: MIN/MAX for dates, EXTRACT(DAY FROM ...) for tenure
-
-    raise NotImplementedError("TODO: Implement create_customer_ltv()")
-
+    query = f"""
+        select u.user_id
+        , u.email
+        , u.first_name
+        , u.last_name
+        , u.loyalty_tier
+        , count(o.order_id) AS total_orders
+        , ROUND(SUM(o.total_usd)::numeric,2) AS total_spent
+        , ROUND(AVG(o.total_usd)::numeric, 2) AS avg_order_value
+        , min(o.order_date) AS first_order_date
+        , max(o.order_date) AS last_order_date
+        ,  EXTRACT( DAY FROM max(o.order_date)- min(o.order_date)) AS days_as_customer 
+        from {SILVER_SCHEMA}.fct_orders o join {SILVER_SCHEMA}.dim_users u on o.user_id = u.user_id
+        group by u.user_id, u.email, u.first_name
+        , u.last_name
+        , u.loyalty_tier
+        """
+    df = pd.read_sql(query, get_engine())
+    _create_gold_table(df, "customer_ltv")
 
 # ---------------------------------------------------------------------------
 # Main function
@@ -173,14 +226,9 @@ def create_gold_layer():
     print(f"\n{'='*60}")
     print(f"  🥇 GOLD Layer ({GOLD_SCHEMA})")
     print(f"{'='*60}\n")
-
-    # TODO: Call each Gold creation function
     # There are 3 functions: daily_revenue, product_performance, customer_ltv
-
-    raise NotImplementedError("TODO: Implement create_gold_layer()")
-
+    create_daily_revenue(), create_customer_ltv(), create_product_performance()
     print(f"\n  ✅ Gold layer created in {GOLD_SCHEMA}")
-
 
 # ---------------------------------------------------------------------------
 # Entry point
