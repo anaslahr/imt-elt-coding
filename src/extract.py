@@ -175,7 +175,16 @@ def _load_to_bronze(df: pd.DataFrame, table_name: str, if_exists: str = "replace
     # TODO: Load the DataFrame into PostgreSQL using df.to_sql()
     # You'll need: get_engine(), and the right to_sql() parameters
     # Don't forget: index=False (we don't want the pandas index as a column)
-    raise NotImplementedError("TODO: Implement _load_to_bronze()")
+    try:
+        df.to_sql(name=table_name, 
+                con=engine, 
+                schema=BRONZE_SCHEMA,
+                if_exists=if_exists,
+                index=False)
+    except Exception as e:
+        print(f"Exception occured: {e}")
+        raise e
+
 
 
 # ---------------------------------------------------------------------------
