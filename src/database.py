@@ -38,8 +38,6 @@ def get_engine():
     Docs:
         https://docs.sqlalchemy.org/en/20/core/engines.html
     """
-    # Hint: use create_engine() from SQLAlchemy
-    # The URL must follow this format: postgresql://{user}:{password}@{host}:{port}/{database}
     SQLALCHEMY_URL= f"postgresql://{RDS_USER}:{RDS_PASSWORD}@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}"
     return create_engine(SQLALCHEMY_URL)
 
@@ -52,9 +50,6 @@ def test_connection():
     Returns:
         bool: True if the connection succeeds, False otherwise.
     """
-    # TODO: Use get_engine() to connect and execute SELECT 1
-    # Hint: use engine.connect() inside a with block
-    #       then connection.execute(text("SELECT 1"))
     try:
         engine = get_engine()
         with engine.connect() as conn:

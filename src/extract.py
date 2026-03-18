@@ -83,11 +83,15 @@ def _read_csv_from_s3(s3_key: str) -> pd.DataFrame:
     Docs:
         https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/get_object.html
     """
-    # TODO: Download the CSV from S3 and return it as a DataFrame
-    # Steps: get S3 client → get_object() → read & decode the body → pd.read_csv()
-    # Remember: read_csv() expects a file-like object, not a raw string
-    raise NotImplementedError("TODO: Implement _read_csv_from_s3()")
-
+    try:
+        s3client = _get_s3_client()
+        object = s3client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+        body = object["Body"].read()
+        dataframe = pd.read_csv(BytesIO(body))
+        return dataframe
+    except Exception as e:
+        print(f"Connection test failed: {e}")
+        raise e
 
 def _read_jsonl_from_s3(s3_key: str) -> pd.DataFrame:
     """
@@ -106,10 +110,15 @@ def _read_jsonl_from_s3(s3_key: str) -> pd.DataFrame:
     Docs:
         https://pandas.pydata.org/docs/reference/api/pandas.read_json.html
     """
-    # TODO: Download the JSONL from S3 and return it as a DataFrame
-    # Very similar to _read_csv_from_s3(), but use pd.read_json() instead.
-    # Key parameter: lines=True (tells pandas each line is a separate JSON object)
-    raise NotImplementedError("TODO: Implement _read_jsonl_from_s3()")
+    try :
+        s3client = _get_s3_client()
+        object = s3client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+        body = object["Body"].read()
+        dataframe = pd.read_json(BytesIO(body), lines= True)
+        return dataframe
+    except Exception as e:
+        print(f"Exception occured: {e}")
+        raise e
 
 
 def _read_partitioned_parquet_from_s3(s3_prefix: str) -> pd.DataFrame:
@@ -196,9 +205,10 @@ def extract_products() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The catalog data.
     """
-    # TODO: Read → Log → Load → Return
-    # Use _read_csv_from_s3() with the right S3 key, then _load_to_bronze()
-    raise NotImplementedError("TODO: Implement extract_products()")
+    products_df = _read_csv_from_s3("raw/catalog/products.csv")
+    print(f"nombre de lignes: {products_df.shape[0]} nombres de colonnes: {products_df.shape[1]}")
+    _load_to_bronze(products_df, "products")
+    return products_df
 
 
 def extract_users() -> pd.DataFrame:
