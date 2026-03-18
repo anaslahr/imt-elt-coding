@@ -69,6 +69,31 @@ This is the core cleaning function — it removes all columns prefixed with `_`.
 3. Print how many were removed (for logging/debugging)
 4. Return the cleaned DataFrame
 
+
+Answer:
+"""
+# Step 1
+df = _drop_internal_columns(df)
+
+# Step 2
+if 'quantity' in df.columns:
+  df = df[df['quantity'] > 0]
+
+# Step 3
+if 'line_total_usd' in df.columns and 'unit_price_usd' in df.columns and 'quantity' in df.columns:
+  expected_total = df['unit_price_usd'] * df['quantity']
+  difference = abs(df['line_total_usd'] - expected_total)
+  bad_rows = difference > 0.01
+  if bad_rows.sum() > 0:
+      print(f"      Removed {bad_rows.sum()} rows with incorrect line totals")
+  df = df[~bad_rows]
+
+# Step 4
+_load_to_silver(df, "fct_order_lines")
+
+return df
+"""
+
 ### 1.2 Implement `transform_products()`
 
 Follow the steps in the code comments:
@@ -77,6 +102,31 @@ Follow the steps in the code comments:
 3. Validate `price_usd > 0` (drop invalid rows)
 4. Convert `is_active` and `is_hype_product` to booleans
 5. Load into `silver.dim_products`
+
+Answer:
+"""
+# Step 1
+df = _drop_internal_columns(df)
+
+# Step 2
+if 'tags' in df.columns:
+    df['tags'] = df['tags'].str.replace('|', ', ')
+
+# Step 3
+if 'price_usd' in df.columns:
+    df = df[df['price_usd'] > 0]
+
+# Step 4
+if 'is_active' in df.columns:
+    df['is_active'] = df['is_active'].astype(bool)
+if 'is_hype_product' in df.columns:
+    df['is_hype_product'] = df['is_hype_product'].astype(bool)
+
+# Step 5
+_load_to_silver(df, "dim_products")
+
+return df
+"""
 
 ### 1.3 Implement `transform_users()`
 
@@ -87,6 +137,25 @@ Follow the steps in the code comments:
 3. Normalize emails (lowercase + strip whitespace)
 4. Load into `silver.dim_users`
 
+Answer:
+"""
+# Step 1
+df = _drop_internal_columns(df)
+
+# Step 2
+if 'loyalty_tier' in df.columns:
+    df['loyalty_tier'] = df['loyalty_tier'].fillna('none')
+
+# Step 3
+if 'email' in df.columns:
+    df['email'] = df['email'].str.lower().str.strip()
+
+# Step 4
+_load_to_silver(df, "dim_users")
+
+return df
+"""
+
 ### 1.4 Implement `transform_orders()`
 
 1. Remove `_*` columns (6 columns — `_stripe_charge_id`, `_paypal_txn_id`, `_internal_channel`, `_fraud_score`, `_fulfillment_warehouse`, `_ab_test_variant`)
@@ -95,6 +164,28 @@ Follow the steps in the code comments:
 4. Replace NULL `coupon_code` with `""` (empty string)
 5. Load into `silver.fct_orders`
 
+Answer:
+"""
+# Step 1
+df = _drop_internal_columns(df)
+
+# Step 2
+valid_statuses = ['delivered', 'shipped', 'processing', 'returned', 'cancelled', 'chargeback']
+if 'status' in df.columns:
+    df = df[df['status'].isin(valid_statuses)]
+
+# Step 3
+if 'order_date' in df.columns:
+    df['order_date'] = pd.to_datetime(df['order_date'])
+
+# Step 4
+if 'coupon_code' in df.columns:
+    df['coupon_code'] = df['coupon_code'].fillna('')
+
+# Step 5:
+_load_to_silver(df, "fct_orders")
+"""
+
 ### 1.5 Implement `transform_order_line_items()`
 
 1. Remove `_*` columns (3 columns — `_warehouse_id`, `_internal_batch_code`, `_pick_slot`)
@@ -102,11 +193,46 @@ Follow the steps in the code comments:
 3. Check `line_total_usd ≈ unit_price_usd × quantity` (log discrepancies)
 4. Load into `silver.fct_order_lines`
 
+Answer:
+"""
+# Step 1
+df = _drop_internal_columns(df)
+
+# Step 2
+if 'quantity' in df.columns:
+    df = df[df['quantity'] > 0]
+
+# Step 3
+if 'line_total_usd' in df.columns and 'unit_price_usd' in df.columns and 'quantity' in df.columns:
+  expected_total = df['unit_price_usd'] * df['quantity']
+  difference = abs(df['line_total_usd'] - expected_total)
+  bad_rows = difference > 0.01
+  if bad_rows.sum() > 0:
+      print(f"      Removed {bad_rows.sum()} rows with incorrect line totals")
+  df = df[~bad_rows]
+
+# Step 4
+_load_to_silver(df, "fct_order_lines")
+
+return df
+"""
+
 ### 1.6 Implement `transform_all()`
 
 Call each of the 4 transform functions and store their results in the `results` dictionary. The keys should match the Silver table names (`dim_products`, `dim_users`, `fct_orders`, `fct_order_lines`).
 
+Answer:
+"""
+results = {}
+results["dim_products"] = transform_products()
+results["dim_users"] = transform_users()
+results["fct_orders"] = transform_orders()
+results["fct_order_lines"] = transform_order_line_items()
+"""
+
 ### 1.7 Verify
+
+
 
 ```bash
 python pipeline.py --step transform
@@ -133,7 +259,15 @@ Expected output:
 
   ✅ Transformation complete — 4 tables in silver_group0
 ```
-
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+####################################################################################################################
+##########################################################
 **SQL Validation** — verify that Silver has fewer columns than Bronze:
 
 ```sql
@@ -177,6 +311,26 @@ Then use `pd.read_sql()` to execute it and `_create_gold_table()` to save it.
 
 > 💡 Use `ROUND(CAST(... AS numeric), 2)` for clean decimal output and `COALESCE(..., 0)` for NULL handling.
 
+answer:
+"""
+query = f"""
+        SELECT
+            DATE(o.order_date) AS order_date,
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            SUM(o.total_usd) AS total_revenue,
+            AVG(o.total_usd) AS avg_order_value,
+            SUM(ol.quantity) AS total_items
+        FROM {SILVER_SCHEMA}.fct_orders o
+        LEFT JOIN {SILVER_SCHEMA}.fct_order_lines ol ON o.order_id = ol.order_id
+        WHERE o.status NOT IN ('cancelled', 'chargeback')
+        GROUP BY DATE(o.order_date)
+        ORDER BY order_date
+    """
+
+    df = pd.read_sql(query, get_engine())
+    _create_gold_table(df, "daily_revenue")
+"""
+
 ### 2.2 Implement `create_product_performance()`
 
 > 🏆 *The product team asks: "Which products sell the most?"*
@@ -190,6 +344,29 @@ Expected columns: `product_id`, `product_name`, `brand`, `category`, `total_quan
 - Filter out cancelled/chargeback orders
 - Group by `product_id, product_name, brand, category`
 - Order by `total_revenue DESC`
+
+answer: 
+"""
+query = f"""
+    SELECT
+        ol.product_id,
+        ol.product_name,
+        p.brand,
+        p.category,
+        SUM(ol.quantity) AS total_quantity_sold,
+        SUM(ol.line_total_usd) AS total_revenue,
+        COUNT(DISTINCT ol.order_id) AS num_orders,
+        AVG(ol.unit_price_usd) AS avg_unit_price
+    FROM {SILVER_SCHEMA}.fct_order_lines ol
+    JOIN {SILVER_SCHEMA}.dim_products p
+        ON ol.product_id = p.product_id
+    GROUP BY
+        ol.product_id,
+        ol.product_name,
+        p.brand,
+        p.category
+    """
+"""
 
 ### 2.3 Implement `create_customer_ltv()`
 
@@ -205,15 +382,46 @@ Expected columns: `user_id`, `email`, `first_name`, `last_name`, `loyalty_tier`,
 - `days_as_customer = EXTRACT(DAY FROM MAX - MIN)`
 - Order by `total_spent DESC`
 
+answer:
+""""
+query = f"""
+        SELECT
+            o.user_id,
+            u.email,
+            u.first_name,
+            u.last_name,
+            u.loyalty_tier,
+            COUNT(o.order_id) AS total_orders,
+            SUM(o.total_usd) AS total_spent,
+            AVG(o.total_usd) AS avg_order_value,
+            MIN(o.order_date) AS first_order_date,
+            MAX(o.order_date) AS last_order_date,
+            EXTRACT(DAY FROM MAX(o.order_date) - MIN(o.order_date)) AS days_as_customer
+        FROM {SILVER_SCHEMA}.fct_orders o
+        JOIN {SILVER_SCHEMA}.dim_users u
+            ON o.user_id = u.user_id
+        GROUP BY
+            o.user_id,
+            u.email,
+            u.first_name,
+            u.last_name,
+            u.loyalty_tier
+    """
+"""
+
 ### 2.4 Implement `create_gold_layer()`
 
 Call the 3 Gold creation functions.
+create_daily_revenue()
+create_product_performance()
+create_customer_ltv()
 
 ### 2.5 Verify
 
 ```bash
 python pipeline.py --step gold
 ```
+
 
 **SQL Validation** — check the Gold tables:
 
@@ -253,6 +461,85 @@ python pipeline.py --step transform
 python pipeline.py --step gold
 ```
 
+validation, also output for the command:
+"""
+============================================================
+  🏪 KICKZ EMPIRE — ELT Pipeline
+============================================================
+
+============================================================
+  🥉 EXTRACT → Bronze (bronze_group1)
+============================================================
+
+products: 228 rows, 21 columns
+users: 5000 rows, 28 columns
+orders: 17072 rows, 31 columns
+order_line_items: 30884 rows, 16 columns
+reviews: 2930 rows, 20 columns
+clickstream: 544041 rows, 27 columns
+
+  ✅ Extraction complete — 6 tables loaded into bronze_group1
+
+============================================================
+  🥈 TRANSFORM → Silver (silver_group1)
+============================================================
+
+  📦 Transform: products → dim_products
+      Dropped 4 internal columns
+    ✅ silver_group1.dim_products — 228 rows loaded
+  👤 Transform: users → dim_users
+      Dropped 8 internal columns
+    ✅ silver_group1.dim_users — 5000 rows loaded
+  🛍️ Transform: orders → fct_orders
+      Dropped 6 internal columns
+    ✅ silver_group1.fct_orders — 17072 rows loaded
+  📋 Transform: order_line_items → fct_order_lines
+      Dropped 3 internal columns
+    ✅ silver_group1.fct_order_lines — 30884 rows loaded
+
+  ✅ Transformation complete — 4 tables in silver_group1
+
+============================================================
+  🥇 GOLD Layer (gold_group1)
+============================================================
+
+  📊 Gold: daily_revenue
+    ✅ gold_group1.daily_revenue — 30 rows
+  🏆 Gold: product_performance
+    ✅ gold_group1.product_performance — 228 rows
+  💰 Gold: customer_ltv
+    ✅ gold_group1.customer_ltv — 4832 rows
+
+  ✅ Transformation complete — 4 tables in silver_group1
+
+============================================================
+  🥇 GOLD Layer (gold_group1)
+============================================================
+
+  📊 Gold: daily_revenue
+    ✅ gold_group1.daily_revenue — 30 rows
+  🏆 Gold: product_performance
+    ✅ gold_group1.product_performance — 228 rows
+  💰 Gold: customer_ltv
+    ✅ gold_group1.customer_ltv — 4832 rows
+
+  ✅ Gold layer created in gold_group1
+
+============================================================
+  ✅ Pipeline completed in 317.5s
+============================================================
+
+"""
+
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+##########################################################
+####################################################################################################################
+##########################################################
 **Final validation:**
 
 ```sql

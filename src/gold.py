@@ -94,8 +94,23 @@ def create_daily_revenue():
     # groups by date, and computes the aggregates described in the docstring.
     # Exclude cancelled/chargeback orders.
     # Then: pd.read_sql() → _create_gold_table()
+    query = f"""
+        SELECT
+            DATE(o.order_date) AS order_date,
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            SUM(o.total_usd) AS total_revenue,
+            AVG(o.total_usd) AS avg_order_value,
+            SUM(ol.quantity) AS total_items
+        FROM {SILVER_SCHEMA}.fct_orders o
+        LEFT JOIN {SILVER_SCHEMA}.fct_order_lines ol ON o.order_id = ol.order_id
+        WHERE o.status NOT IN ('cancelled', 'chargeback')
+        GROUP BY DATE(o.order_date)
+        ORDER BY order_date
+    """
 
-    raise NotImplementedError("TODO: Implement create_daily_revenue()")
+    df = pd.read_sql(query, get_engine())
+    _create_gold_table(df, "daily_revenue")
+
 
 
 def create_product_performance():
@@ -124,8 +139,28 @@ def create_product_performance():
     # Join fct_order_lines with dim_products (and filter via fct_orders)
     # Group by product_id + product details, aggregate sales metrics
     # See the expected columns in the docstring above
+    query = f"""
+    SELECT
+        ol.product_id,
+        ol.product_name,
+        p.brand,
+        p.category,
+        SUM(ol.quantity) AS total_quantity_sold,
+        SUM(ol.line_total_usd) AS total_revenue,
+        COUNT(DISTINCT ol.order_id) AS num_orders,
+        AVG(ol.unit_price_usd) AS avg_unit_price
+    FROM {SILVER_SCHEMA}.fct_order_lines ol
+    JOIN {SILVER_SCHEMA}.dim_products p
+        ON ol.product_id = p.product_id
+    GROUP BY
+        ol.product_id,
+        ol.product_name,
+        p.brand,
+        p.category
+    """
 
-    raise NotImplementedError("TODO: Implement create_product_performance()")
+    df = pd.read_sql(query, get_engine())
+    _create_gold_table(df, "product_performance")
 
 
 def create_customer_ltv():
@@ -159,8 +194,31 @@ def create_customer_ltv():
     # Join fct_orders with dim_users
     # Group by customer, compute the aggregates listed in the docstring
     # Hint: MIN/MAX for dates, EXTRACT(DAY FROM ...) for tenure
-
-    raise NotImplementedError("TODO: Implement create_customer_ltv()")
+    query = f"""
+        SELECT
+            o.user_id,
+            u.email,
+            u.first_name,
+            u.last_name,
+            u.loyalty_tier,
+            COUNT(o.order_id) AS total_orders,
+            SUM(o.total_usd) AS total_spent,
+            AVG(o.total_usd) AS avg_order_value,
+            MIN(o.order_date) AS first_order_date,
+            MAX(o.order_date) AS last_order_date,
+            EXTRACT(DAY FROM MAX(o.order_date) - MIN(o.order_date)) AS days_as_customer
+        FROM {SILVER_SCHEMA}.fct_orders o
+        JOIN {SILVER_SCHEMA}.dim_users u
+            ON o.user_id = u.user_id
+        GROUP BY
+            o.user_id,
+            u.email,
+            u.first_name,
+            u.last_name,
+            u.loyalty_tier
+    """
+    df = pd.read_sql(query, get_engine())
+    _create_gold_table(df, "customer_ltv")
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +234,9 @@ def create_gold_layer():
 
     # TODO: Call each Gold creation function
     # There are 3 functions: daily_revenue, product_performance, customer_ltv
-
-    raise NotImplementedError("TODO: Implement create_gold_layer()")
+    create_daily_revenue()
+    create_product_performance()
+    create_customer_ltv()
 
     print(f"\n  ✅ Gold layer created in {GOLD_SCHEMA}")
 

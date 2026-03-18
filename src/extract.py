@@ -86,8 +86,11 @@ def _read_csv_from_s3(s3_key: str) -> pd.DataFrame:
     # TODO: Download the CSV from S3 and return it as a DataFrame
     # Steps: get S3 client → get_object() → read & decode the body → pd.read_csv()
     # Remember: read_csv() expects a file-like object, not a raw string
-    raise NotImplementedError("TODO: Implement _read_csv_from_s3()")
-
+    s3 = _get_s3_client()
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+    df = pd.read_csv(StringIO(obj["Body"].read().decode("utf-8")))
+    return df
+    #raise NotImplementedError("TODO: Implement _read_csv_from_s3()")
 
 def _read_jsonl_from_s3(s3_key: str) -> pd.DataFrame:
     """
@@ -106,10 +109,11 @@ def _read_jsonl_from_s3(s3_key: str) -> pd.DataFrame:
     Docs:
         https://pandas.pydata.org/docs/reference/api/pandas.read_json.html
     """
-    # TODO: Download the JSONL from S3 and return it as a DataFrame
-    # Very similar to _read_csv_from_s3(), but use pd.read_json() instead.
-    # Key parameter: lines=True (tells pandas each line is a separate JSON object)
-    raise NotImplementedError("TODO: Implement _read_jsonl_from_s3()")
+    s3 = _get_s3_client()
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+    df = pd.read_json(StringIO(obj["Body"].read().decode("utf-8")), lines=True)
+    return df
+    #raise NotImplementedError("TODO: Implement _read_jsonl_from_s3()")
 
 
 def _read_partitioned_parquet_from_s3(s3_prefix: str) -> pd.DataFrame:
@@ -138,14 +142,31 @@ def _read_partitioned_parquet_from_s3(s3_prefix: str) -> pd.DataFrame:
     Docs:
         https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html
     """
-    # TODO: List all Parquet files under s3_prefix and concatenate them
-    # Strategy:
-    #   1. Use s3.get_paginator("list_objects_v2") to list all objects under the prefix
-    #   2. Filter keys that end with ".parquet"
-    #   3. For each file: download with get_object(), read with pq.read_table()
-    #      (Parquet is binary → use BytesIO, not StringIO)
-    #   4. Collect all DataFrames in a list, then pd.concat() them
-    raise NotImplementedError("TODO: Implement _read_partitioned_parquet_from_s3()")
+
+    s3 = _get_s3_client()
+    #List all Parquet files under s3_prefix and concatenate them
+    
+    paginator = s3.get_paginator("list_objects_v2")
+    pages = paginator.paginate(Bucket=S3_BUCKET, Prefix=s3_prefix)
+    dfs = []
+
+    # go for all pages and objects
+    for page in pages:
+        if "Contents" not in page:
+            continue
+
+        for obj in page["Contents"]:
+            key = obj["Key"]
+
+            if key.endswith(".parquet"):
+                file_obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+
+                #read the file
+                table = pq.read_table(BytesIO(file_obj["Body"].read()))
+                df = table.to_pandas()
+                dfs.append(df)
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
@@ -172,10 +193,14 @@ def _load_to_bronze(df: pd.DataFrame, table_name: str, if_exists: str = "replace
     Docs:
         https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.to_sql.html
     """
-    # TODO: Load the DataFrame into PostgreSQL using df.to_sql()
-    # You'll need: get_engine(), and the right to_sql() parameters
-    # Don't forget: index=False (we don't want the pandas index as a column)
-    raise NotImplementedError("TODO: Implement _load_to_bronze()")
+    engine = get_engine()
+    df.to_sql(
+        name=table_name,
+        con=engine,
+        schema=BRONZE_SCHEMA,
+        if_exists=if_exists,
+        index=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -196,9 +221,10 @@ def extract_products() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The catalog data.
     """
-    # TODO: Read → Log → Load → Return
-    # Use _read_csv_from_s3() with the right S3 key, then _load_to_bronze()
-    raise NotImplementedError("TODO: Implement extract_products()")
+    df = _read_csv_from_s3("raw/catalog/products.csv")
+    print(f"products: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "products")
+    return df
 
 
 def extract_users() -> pd.DataFrame:
@@ -211,8 +237,13 @@ def extract_users() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The user data.
     """
+    df = _read_csv_from_s3("raw/users/users.csv")
+    print(f"users: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "users")
+    return df
+
     # TODO: Same pattern as extract_products()
-    raise NotImplementedError("TODO: Implement extract_users()")
+    #raise NotImplementedError("TODO: Implement extract_users()")
 
 
 def extract_orders() -> pd.DataFrame:
@@ -225,8 +256,10 @@ def extract_orders() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The order data.
     """
-    # TODO: Same pattern as extract_products()
-    raise NotImplementedError("TODO: Implement extract_orders()")
+    df = _read_csv_from_s3("raw/orders/orders.csv")
+    print(f"orders: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "orders")
+    return df
 
 
 def extract_order_line_items() -> pd.DataFrame:
@@ -239,8 +272,10 @@ def extract_order_line_items() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The order line item data.
     """
-    # TODO: Same pattern as extract_products()
-    raise NotImplementedError("TODO: Implement extract_order_line_items()")
+    df = _read_csv_from_s3("raw/order_line_items/order_line_items.csv")
+    print(f"order_line_items: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "order_line_items")
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +296,10 @@ def extract_reviews() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The reviews data.
     """
-    # TODO: Same pattern, but use _read_jsonl_from_s3() instead of _read_csv_from_s3()
-    raise NotImplementedError("TODO: Implement extract_reviews()")
+    df = _read_jsonl_from_s3("raw/reviews/reviews.jsonl")
+    print(f"reviews: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "reviews")
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -292,9 +329,10 @@ def extract_clickstream() -> pd.DataFrame:
     Returns:
         pd.DataFrame: The clickstream data.
     """
-    # TODO: Same pattern, but use _read_partitioned_parquet_from_s3()
-    # Note: pass a prefix (folder path), not a file key
-    raise NotImplementedError("TODO: Implement extract_clickstream()")
+    df = _read_partitioned_parquet_from_s3("raw/clickstream/")
+    print(f"clickstream: {len(df)} rows, {len(df.columns)} columns")
+    _load_to_bronze(df, "clickstream")
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +356,12 @@ def extract_all() -> dict[str, pd.DataFrame]:
 
     results = {}
 
-    # TODO: Call each extract_*() function and store the result in the dict
-    # There are 6 functions to call: 4 CSV + 1 JSONL + 1 Parquet
-
-    raise NotImplementedError("TODO: Implement extract_all()")
+    results["products"] = extract_products()
+    results["users"] = extract_users()
+    results["orders"] = extract_orders()
+    results["order_line_items"] = extract_order_line_items()
+    results["reviews"] = extract_reviews()
+    results["clickstream"] = extract_clickstream()
 
     print(f"\n  ✅ Extraction complete — {len(results)} tables loaded into {BRONZE_SCHEMA}")
     return results
