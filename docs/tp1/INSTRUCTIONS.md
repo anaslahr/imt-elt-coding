@@ -242,7 +242,7 @@ products.csv has 21 columns. These columns are internal : _internal_cost_usd, _s
 2. How many columns does `users.csv` have? Can you spot PII (passwords, IPs)?
 
 users.csv has 28 columns.
-The PII columns are : _hashed_password, _ga_client_id, _fbp, _device_fingerprint. They are internal columns, which seems logic in this case of privacy.
+These columns can be considered as PII : user_id, user_uuid, email, first_name, last_name, phone, gender, date_of_birth, city, address_line_1, address_line_2, postal_code, _ga_client_id, _fbp, _device_fingerprint, _last_ip
 
 3. In `orders.csv`, what are the possible values for `status`?
 
