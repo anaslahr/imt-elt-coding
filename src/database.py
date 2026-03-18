@@ -6,6 +6,7 @@ TP1 — Step 0: Configure the database connection.
 """
 
 import os
+from urllib.parse import quote_plus #library for special characters 
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
@@ -38,10 +39,13 @@ def get_engine():
     Docs:
         https://docs.sqlalchemy.org/en/20/core/engines.html
     """
-    # TODO: Build the PostgreSQL connection URL and create the engine
-    # Hint: use create_engine() from SQLAlchemy
-    # The URL must follow this format: postgresql://{user}:{password}@{host}:{port}/{database}
-    raise NotImplementedError("TODO: Implement get_engine()")
+    #special characters
+    user_escaped = quote_plus(RDS_USER)
+    password_escaped = quote_plus(RDS_PASSWORD)
+    
+    #URL
+    url = f"postgresql://{user_escaped}:{password_escaped}@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}"
+    return create_engine(url)
 
 
 def test_connection():
@@ -52,10 +56,15 @@ def test_connection():
     Returns:
         bool: True if the connection succeeds, False otherwise.
     """
-    # TODO: Use get_engine() to connect and execute SELECT 1
-    # Hint: use engine.connect() inside a with block
-    #       then connection.execute(text("SELECT 1"))
-    raise NotImplementedError("TODO: Implement test_connection()")
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
 
 
 def execute_sql(sql: str, params: dict = None):
