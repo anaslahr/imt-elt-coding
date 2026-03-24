@@ -7,6 +7,10 @@ from sqlalchemy import text
 
 from src.database import get_engine, BRONZE_SCHEMA, SILVER_SCHEMA
 
+# TODO (TP3): Import your logger and create a module-level logger
+#   1. from src.logger import get_logger
+#   2. logger = get_logger(__name__)
+
 
 def _read_bronze(table_name: str) -> pd.DataFrame:
     """Read a table from the Bronze schema via SQL."""
@@ -42,6 +46,14 @@ def _load_to_silver(df: pd.DataFrame, table_name: str, if_exists: str = "replace
 
 def transform_products() -> pd.DataFrame:
     """Transform bronze.products → silver.dim_products."""
+    # TODO (TP3): Replace print() with logger.info() and wrap in try/except
+    #   - Replace the print below with: logger.info("Transform: products → dim_products")
+    #   - Wrap the entire function body in try/except:
+    #       try:
+    #           ... (existing code)
+    #       except Exception as e:
+    #           logger.error(f"Failed to transform products: {e}")
+    #           raise   ← re-raise so the caller knows it failed
     print("  📦 Transform: products → dim_products")
     df = _read_bronze("products")
 
@@ -60,6 +72,7 @@ def transform_products() -> pd.DataFrame:
     # 3. Validate price_usd (must be > 0)
     invalid_prices = df[df["price_usd"] <= 0]
     if len(invalid_prices) > 0:
+        # TODO (TP3): Replace with logger.warning(...)
         print(f"    ⚠️  {len(invalid_prices)} products with price <= 0 (removed)")
     df = df[df["price_usd"] > 0]
 
@@ -78,6 +91,7 @@ def transform_products() -> pd.DataFrame:
 
 def transform_users() -> pd.DataFrame:
     """Transform bronze.users → silver.dim_users."""
+    # TODO (TP3): Same pattern — replace print with logger.info, add try/except + logger.error + raise
     print("  👤 Transform: users → dim_users")
     df = _read_bronze("users")
 
@@ -102,6 +116,7 @@ def transform_users() -> pd.DataFrame:
 
 def transform_orders() -> pd.DataFrame:
     """Transform bronze.orders → silver.fct_orders."""
+    # TODO (TP3): Same pattern — replace print with logger.info, add try/except + logger.error + raise
     print("  🛍️ Transform: orders → fct_orders")
     df = _read_bronze("orders")
 
@@ -116,6 +131,7 @@ def transform_orders() -> pd.DataFrame:
     VALID_STATUSES = {"delivered", "shipped", "processing", "returned", "cancelled", "chargeback"}
     invalid = df[~df["status"].isin(VALID_STATUSES)]
     if len(invalid) > 0:
+        # TODO (TP3): Replace with logger.warning(...)
         print(f"    ⚠️  {len(invalid)} orders with invalid status (removed)")
         df = df[df["status"].isin(VALID_STATUSES)]
 
@@ -137,6 +153,7 @@ def transform_orders() -> pd.DataFrame:
 
 def transform_order_line_items() -> pd.DataFrame:
     """Transform bronze.order_line_items → silver.fct_order_lines."""
+    # TODO (TP3): Same pattern — replace print with logger.info, add try/except + logger.error + raise
     print("  📋 Transform: order_line_items → fct_order_lines")
     df = _read_bronze("order_line_items")
 
@@ -148,6 +165,7 @@ def transform_order_line_items() -> pd.DataFrame:
     # 2. Validate quantity > 0
     invalid_qty = df[df["quantity"] <= 0]
     if len(invalid_qty) > 0:
+        # TODO (TP3): Replace with logger.warning(...)
         print(f"    ⚠️  {len(invalid_qty)} rows with quantity <= 0 (removed)")
     df = df[df["quantity"] > 0]
 
@@ -158,6 +176,7 @@ def transform_order_line_items() -> pd.DataFrame:
     df["_check"] = abs(df["line_total_usd"] - df["unit_price_usd"] * df["quantity"])
     bad_rows = df[df["_check"] > 0.01]
     if len(bad_rows) > 0:
+        # TODO (TP3): Replace with logger.info(...)
         print(f"    ℹ️  {len(bad_rows)} rows with inconsistent line_total")
     df = df.drop(columns=["_check"])
 

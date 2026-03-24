@@ -13,6 +13,10 @@ from sqlalchemy import text
 
 from src.database import get_engine, BRONZE_SCHEMA
 
+# TODO (TP3): Import your logger and create a module-level logger
+#   1. from src.logger import get_logger
+#   2. logger = get_logger(__name__)
+
 S3_BUCKET = os.getenv("S3_BUCKET_NAME", "kickz-empire-data")
 S3_PREFIX = os.getenv("S3_PREFIX", "raw")
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-3")
@@ -91,6 +95,7 @@ def _load_to_bronze(df: pd.DataFrame, table_name: str, if_exists: str = "replace
         if_exists=if_exists,
         index=False,
     )
+    # TODO (TP3): Replace with logger.info(...)
     print(f"    ✅ {BRONZE_SCHEMA}.{table_name} — {len(df)} rows loaded")
 
 
@@ -99,8 +104,7 @@ def _load_to_bronze(df: pd.DataFrame, table_name: str, if_exists: str = "replace
 # ---------------------------------------------------------------------------
 def extract_products() -> pd.DataFrame:
     """Extract the product catalog from S3 → bronze.products."""
-    # TODO: Read → Log → Load → Return
-    # Use _read_csv_from_s3() with the right S3 key, then _load_to_bronze()
+    # TODO (TP3): Replace print with logger.info, add try/except + logger.error + raise
     df = _read_csv_from_s3(f"{S3_PREFIX}/catalog/products.csv")
     print(f"  📦 Products: {len(df)} rows, {len(df.columns)} columns")
     _load_to_bronze(df, "products")
@@ -109,7 +113,7 @@ def extract_products() -> pd.DataFrame:
 
 def extract_users() -> pd.DataFrame:
     """Extract users from S3 → bronze.users."""
-    # TODO: Same pattern as extract_products()
+    # TODO (TP3): Replace print with logger.info, add try/except + logger.error + raise
     df = _read_csv_from_s3(f"{S3_PREFIX}/users/users.csv")
     print(f"  👤 Users: {len(df)} rows, {len(df.columns)} columns")
     _load_to_bronze(df, "users")
@@ -118,7 +122,7 @@ def extract_users() -> pd.DataFrame:
 
 def extract_orders() -> pd.DataFrame:
     """Extract orders from S3 → bronze.orders."""
-    # TODO: Same pattern as extract_products()
+    # TODO (TP3): Replace print with logger.info, add try/except + logger.error + raise
     df = _read_csv_from_s3(f"{S3_PREFIX}/orders/orders.csv")
     print(f"  🛍️ Orders: {len(df)} rows, {len(df.columns)} columns")
     _load_to_bronze(df, "orders")
